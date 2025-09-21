@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EcoRegistro QR - UNACH</title>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-analytics-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <!-- Chart.js para gráficas -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet" />
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Roboto', sans-serif;
+      background: linear-gradient(to right, #e6f4ea, #d3f0d1);
+      color: #333;
+    }
+
+    .container {
+      max-width: 500px;
+      margin: 50px auto;
+      background: #ffffff;
+      border-radius: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+      padding: 30px;
+    }
+
+    h1, h2 {
+      text-align: center;
+      color: #2e7d32;
+    }
+
+    .subtitle {
+      text-align: center;
+      font-size: 16px;
+      color: #4caf50;
+      margin-bottom: 20px;
+    }
+
+    input, select, button {
+      width: 100%;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-size: 16px;
+    }
+
+    button {
+      background-color: #4caf50;
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #388e3c;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 13px;
+      margin-top: 30px;
+      color: #555;
+    }
+
+    canvas {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>EcoRegistro QR 🌿</h1>
+    <div class="subtitle">Sistema de registro ecológico - UNACH</div>
+
+    <form id="registroForm">
+      <input type="text" id="nombre" placeholder="Nombre completo" required />
+      <input type="text" id="matricula" placeholder="Matrícula" required />
+      <select id="residuo" required>
+        <option value="">Selecciona tipo de residuo</option>
+        <option value="Plástico">Plástico</option>
+        <option value="Papel">Papel</option>
+        <option value="Orgánico">Orgánico</option>
+      </select>
+      <input type="text" id="ubicacion" placeholder="Ubicación del bote (ej. Edificio B)" />
+      <button type="submit">Registrar</button>
+    </form>
+  </div>
+
+  <div class="container">
+    <h2>Estadísticas de reciclaje 🌱</h2>
+    <canvas id="graficaResiduos" width="400" height="200"></canvas>
+  </div>
+
+  <footer>
+    Proyecto universitario · Universidad Autónoma de Chiapas · ©️ 2025
+  </footer>
+
+  <script>
+    // Configuración de Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyAr-HwtIYPFLnoBcuuEsnQrfwi9R6ugeuw",
+      authDomain: "ecoregistroqr.firebaseapp.com",
+      projectId: "ecoregistroqr",
+      storageBucket: "ecoregistroqr.firebasestorage.app",
+      messagingSenderId: "573103746584",
+      appId: "1:573103746584:web:b909d50c78b4e0e840dd6d",
+      measurementId: "G-DH08GG85XS"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    firebase.analytics();
+    const db = firebase.firestore();
+
+    // Detectar tipo de residuo desde QR
+    const urlParams = new URLSearchParams(window.location.search);
+    const tipoResiduo = urlParams.get('residuo');
+    if(tipoResiduo){
+      document.getElementById('residuo').value = tipoResiduo;
+    }
+
+    // Inicializar gráfica
+    const ctx = document.getElementById('graficaResiduos').getContext('2d');
+    const grafica = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: ['Plástico', 'Papel', 'Orgánico'],
+        datasets: [{
+          label: 'Cantidad de registros',
+          data: [0,0,0],
+          backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56']
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } }
+      }
+    });
+
+    async function actualizarGrafica() {
+      const snapshot = await db.collection("registros").get();
+      let plastico = 0, papel = 0, organico = 0;
+      snapshot.forEach(doc => {
+        const r = doc.data().residuo;
+        if(r === "Plástico") plastico++;
+        else if(r === "Papel") papel++;
+        else if(r === "Orgánico") organico++;
+      });
+      grafica.data.datasets[0].data = [plastico, papel, organico];
+      grafica.update();
+    }
+
+    // Actualizar gráfica al cargar la página
+    actualizarGrafica();
+
+    // Manejo del formulario
+    const form = document.getElementById('registroForm');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const nombre = document.getElementById('nombre').value.trim();
+      const matricula = document.getElementById('matricula').value.trim();
+      const residuo = document.getElementById('residuo').value;
+      const ubicacion = document.getElementById('ubicacion').value.trim();
+
+      if (!nombre || !matricula || !residuo) {
+        alert("Por favor, completa todos los campos obligatorios.");
+        return;
+      }
+
+      try {
+        await db.collection("registros").add({
+          nombre,
+          matricula,
+          residuo,
+          ubicacion,
+          fecha: new Date()
+        });
+        alert("✅ Registro guardado correctamente");
+        form.reset();
+        actualizarGrafica(); // <-- actualizar gráfica automáticamente
+      } catch (error) {
+        console.error("Error al guardar:", error);
+        alert("❌ Ocurrió un error al guardar el registro");
+      }
+    });
+  </script>
+</body>
+</html>
